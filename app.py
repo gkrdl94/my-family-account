@@ -17,7 +17,7 @@ FIXED_HEADERS = ['일자', '구분', '사용자', '카테고리', '내역', '금
 COL_MAP = {'날짜': 1, '구분': 2, '사용자': 3, '카테고리': 4, '내역': 5, '금액': 6}
 
 INCOME_CATS = ["월급", "월세", "성과급", "부수입", "기타"]
-EXPENSE_CATS = ["식비", "외식/배달", "쇼핑", "교통", "주거/통신", "의료/건강", "임신/육아", "저축", "기타"]
+EXPENSE_CATS = ["식비", "외식/배달", "쇼핑", "교통", "주거/통신", "의료/건강", "임신/육아", "공과금", "생필품", "여행", "취미", "축의/조의", "자동차", "미용", "용돈", "저축", "기타"]
 
 def get_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -138,7 +138,7 @@ def main():
 
     with st.sidebar:
         st.title("🏡 우리집 가계부")
-        menu = st.radio("메뉴 이동", ["📝 입력 및 홈", "🔄 고정 지출 관리", "📅 달력 및 내역", "📊 맞춤형 분석"])
+        menu = st.radio("메뉴 이동", ["📝 입력 및 홈", "🔄 고정 지출 관리", "📅 달력", "📊 분석"])
         st.markdown("---")
         target_budget = st.number_input("목표 생활비(원)", value=2000000, step=100000, format="%d")
 
@@ -186,7 +186,7 @@ def main():
 
             with st.form("input_form", clear_on_submit=True):
                 date = st.date_input("날짜", today)
-                user = st.selectbox("사용자", ["남편", "아내", "공용"])
+                user = st.selectbox("사용자", ["해기", "에디", "같이"])
                 category = st.selectbox("카테고리", cat_options)
                 item = st.text_input("내용")
                 amount = st.number_input("금액", min_value=0, step=1000)
@@ -217,7 +217,7 @@ def main():
                     column_config={
                         "금액": st.column_config.NumberColumn(format="%d원"), # 에디터에서는 숫자만 표시해야 수정이 원활함
                         "카테고리": st.column_config.SelectboxColumn(options=all_cats),
-                        "사용자": st.column_config.SelectboxColumn(options=["남편", "아내", "공용"]),
+                        "사용자": st.column_config.SelectboxColumn(options=["해기", "에디", "같이"]),
                         "구분": st.column_config.SelectboxColumn(options=["지출", "수입"])
                     }
                 )
@@ -255,7 +255,7 @@ def main():
                 amount = c2.number_input("금액", min_value=0, step=10000)
                 
                 c3, c4 = st.columns(2)
-                user = c3.selectbox("사용자", ["남편", "아내", "공용"])
+                user = c3.selectbox("사용자", ["해기", "에디", "같이"])
                 category = c4.selectbox("카테고리", f_cats)
                 item = st.text_input("내용 (예: 월세)")
                 
@@ -431,3 +431,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
