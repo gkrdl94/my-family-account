@@ -12,7 +12,7 @@ import time
 JSON_FILE = 'family-ledger-486809-9594b880837a.json'
 SPREADSHEET_NAME = '가계부데이터' 
 HEADERS = ['날짜', '구분', '사용자', '카테고리', '내역', '금액']
-FIXED_HEADERS = ['일자', '구분', '사용자', '카테고리', '내역', '금액'] # 고정지출용 헤더
+FIXED_HEADERS = ['일자', '구분', '사용자', '카테고리', '내역', '금액']
 
 COL_MAP = {'날짜': 1, '구분': 2, '사용자': 3, '카테고리': 4, '내역': 5, '금액': 6}
 
@@ -34,7 +34,6 @@ def get_client():
     client = gspread.authorize(creds)
     return client
 
-# 메인 데이터 가져오기
 def get_data():
     try:
         client = get_client()
@@ -54,13 +53,10 @@ def get_data():
     except:
         return pd.DataFrame(columns=HEADERS)
 
-# 고정 지출 데이터 가져오기 (없으면 시트 생성)
 def get_fixed_data():
     try:
         client = get_client()
         if not client: return pd.DataFrame(columns=FIXED_HEADERS)
-        
-        # '고정지출' 워크시트가 없으면 생성
         try:
             sheet = client.open(SPREADSHEET_NAME).worksheet("고정지출")
         except:
@@ -111,7 +107,7 @@ def main():
     st.set_page_config(page_title="우리집 가계부", layout="wide", page_icon="🏡")
     today = datetime.now()
 
-    # CSS (모바일 달력 등)
+    # CSS 스타일
     st.markdown("""
     <style>
     .calendar-container {
@@ -144,7 +140,7 @@ def main():
         st.title("🏡 우리집 가계부")
         menu = st.radio("메뉴 이동", ["📝 입력 및 홈", "🔄 고정 지출 관리", "📅 달력 및 내역", "📊 맞춤형 분석"])
         st.markdown("---")
-        target_budget = st.number_input("목표 생활비(원)", value=2000000, step=100000)
+        target_budget = st.number_input("목표 생활비(원)", value=2000000, step=100000, format="%d")
 
     # 데이터 로딩
     df = get_data()
@@ -164,7 +160,6 @@ def main():
     if menu == "📝 입력 및 홈":
         st.header(f"{today.month}월 가계부 현황")
         
-        # 예산 계산
         if not df.empty:
             this_month_df = df[(df['날짜'].dt.month == today.month) & (df['날짜'].dt.year == today.year)]
             total_expense = this_month_df[this_month_df['구분']=='지출']['금액'].sum()
@@ -182,11 +177,8 @@ def main():
         
         with col1:
             st.subheader("✍️ 내역 입력")
-            
-            # [중요 수정] 구분 버튼을 form 밖으로 뺌 (즉시 반응을 위해)
             exp_type = st.radio("구분", ["지출", "수입"], horizontal=True, key="main_radio")
             
-            # 구분에 따라 카테고리 목록 변경
             if exp_type == "수입":
                 cat_options = INCOME_CATS
             else:
@@ -208,8 +200,13 @@ def main():
         with col2:
             st.subheader("📋 최근 내역 (클릭해서 수정)")
             if not df.empty:
+                # [수정 1] 컬럼 순서 변경: 날짜 -> 구분 -> 금액 -> 카테고리 -> 내역 -> 사용자
                 edit_df = df.sort_values(by='날짜', ascending=False).head(15).copy()
                 edit_df['날짜'] = edit_df['날짜'].dt.strftime('%Y-%m-%d')
+                
+                # 재정렬
+                edit_df = edit_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
+
                 all_cats = list(set(INCOME_CATS + EXPENSE_CATS))
 
                 edited_data = st.data_editor(
@@ -218,7 +215,7 @@ def main():
                     num_rows="fixed",
                     hide_index=True,
                     column_config={
-                        "금액": st.column_config.NumberColumn(format="%d원"),
+                        "금액": st.column_config.NumberColumn(format="%d원"), # 에디터에서는 숫자만 표시해야 수정이 원활함
                         "카테고리": st.column_config.SelectboxColumn(options=all_cats),
                         "사용자": st.column_config.SelectboxColumn(options=["남편", "아내", "공용"]),
                         "구분": st.column_config.SelectboxColumn(options=["지출", "수입"])
@@ -230,6 +227,7 @@ def main():
                         with st.spinner("저장 중..."):
                             for index, row in edited_data.iterrows():
                                 original_row = edit_df.loc[index]
+                                # 컬럼 순서가 바뀌었어도 데이터프레임 컬럼명으로 접근하므로 안전
                                 for col in HEADERS:
                                     if str(row[col]) != str(original_row[col]):
                                         update_cell(index, col, row[col])
@@ -240,17 +238,14 @@ def main():
                 st.info("데이터가 없습니다.")
 
     # ==========================
-    # [탭 2] 고정 지출 관리 (NEW)
+    # [탭 2] 고정 지출 관리
     # ==========================
     elif menu == "🔄 고정 지출 관리":
         st.header("🔄 매월 고정 지출/수입 설정")
-        st.info("매달 반복되는 월급, 월세 등을 등록해두고 한 번에 입력하세요.")
-
+        
         fixed_df = get_fixed_data()
 
-        # 1. 고정 지출 등록 폼
         with st.expander("➕ 새 고정 항목 추가하기", expanded=True):
-            # 구분 버튼을 form 밖으로 (반응형)
             f_type = st.radio("구분", ["지출", "수입"], horizontal=True, key="fixed_radio")
             f_cats = INCOME_CATS if f_type == "수입" else EXPENSE_CATS
 
@@ -262,42 +257,34 @@ def main():
                 c3, c4 = st.columns(2)
                 user = c3.selectbox("사용자", ["남편", "아내", "공용"])
                 category = c4.selectbox("카테고리", f_cats)
-                item = st.text_input("내용 (예: 월세, 넷플릭스)")
+                item = st.text_input("내용 (예: 월세)")
                 
                 if st.form_submit_button("리스트에 추가"):
                     add_fixed_row(day, f_type, user, category, item, amount)
-                    st.success("고정 리스트에 추가되었습니다!")
+                    st.success("추가되었습니다!")
                     time.sleep(0.5)
                     st.rerun()
 
         st.divider()
 
-        # 2. 이번 달 가계부에 일괄 적용하기
         st.subheader("🚀 이번 달 가계부에 적용하기")
-        
         if not fixed_df.empty:
-            st.write("아래 리스트를 확인하고 버튼을 누르면, **이번 달 날짜로** 가계부에 자동 입력됩니다.")
-            st.dataframe(fixed_df, use_container_width=True)
+            # [수정] 금액 콤마 적용하여 보여주기 (읽기 전용이므로 스타일 적용)
+            st.dataframe(fixed_df.style.format({"금액": "{:,.0f}원"}), use_container_width=True)
             
             if st.button("📅 이번 달 내역으로 일괄 등록하기", type="primary"):
                 count = 0
                 for index, row in fixed_df.iterrows():
-                    # 이번 달 날짜 생성 (YYYY-MM-DD)
                     try:
-                        # 날짜가 2월 30일 같은 경우 에러 방지 (그 달의 마지막 날로 처리하거나 try-except)
                         target_day = int(row['일자'])
                         last_day = calendar.monthrange(today.year, today.month)[1]
                         if target_day > last_day: target_day = last_day
-                        
                         target_date = today.replace(day=target_day).strftime('%Y-%m-%d')
-                        
-                        # 메인 시트에 추가
                         add_row(target_date, row['구분'], row['사용자'], row['카테고리'], row['내역'], row['금액'])
                         count += 1
                     except Exception as e:
-                        st.error(f"에러 발생: {e}")
-                
-                st.success(f"총 {count}건이 이번 달 가계부에 등록되었습니다!")
+                        st.error(f"에러: {e}")
+                st.success(f"총 {count}건 등록 완료!")
                 time.sleep(1)
                 st.rerun()
             
@@ -308,9 +295,8 @@ def main():
                 delete_fixed_row(del_idx)
                 st.warning("삭제되었습니다.")
                 st.rerun()
-                
         else:
-            st.info("등록된 고정 지출이 없습니다. 위에서 추가해주세요.")
+            st.info("등록된 고정 지출이 없습니다.")
 
     # ==========================
     # [탭 3] 달력 및 내역
@@ -356,6 +342,7 @@ def main():
                         d_exp = day_records[day_records['구분']=='지출']['금액'].sum()
                         d_inc = day_records[day_records['구분']=='수입']['금액'].sum()
                         
+                        # [수정] 콤마 적용
                         if d_exp > 0:
                             cell_content += f'<div style="color:red; font-size:0.85em;" class="amount-text">-{d_exp:,.0f}</div>'
                         if d_inc > 0:
@@ -376,10 +363,12 @@ def main():
                 d_expense = day_df[day_df['구분']=='지출']['금액'].sum()
                 
                 m1, m2 = st.columns(2)
+                # [수정] 콤마 적용
                 m1.metric("수입", f"{d_income:,.0f}원")
                 m2.metric("지출", f"{d_expense:,.0f}원")
                 
-                display_table = day_df[['사용자', '카테고리', '내역', '금액', '구분']].copy()
+                # [수정] 컬럼 순서 및 콤마 적용
+                display_table = day_df[['구분', '금액', '카테고리', '내역', '사용자']].copy()
                 st.dataframe(display_table.style.format({"금액": "{:,.0f}원"}), use_container_width=True, hide_index=True)
             else:
                 st.info("해당 날짜의 내역이 없습니다.")
@@ -423,7 +412,9 @@ def main():
                     m1.metric("기간 수입", f"{total_inc:,.0f}원")
                     m2.metric("기간 지출", f"{total_exp:,.0f}원")
 
-                    st.dataframe(filtered_df.sort_values(by='날짜', ascending=False), use_container_width=True)
+                    # [수정] 콤마 적용 및 컬럼 재정렬
+                    display_filtered = filtered_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']].sort_values(by='날짜', ascending=False)
+                    st.dataframe(display_filtered.style.format({"금액": "{:,.0f}원"}), use_container_width=True)
                 else:
                     st.info("내역이 없습니다.")
             else:
@@ -431,7 +422,7 @@ def main():
                 
             st.divider()
             with st.expander("🗑️ 데이터 삭제"):
-                st.dataframe(df.sort_values(by='날짜', ascending=False).head(5)) 
+                st.dataframe(df.sort_values(by='날짜', ascending=False).head(5).style.format({"금액": "{:,.0f}원"})) 
                 del_id = st.number_input("삭제할 행 번호", min_value=0, step=1)
                 if st.button("삭제 실행"):
                     delete_row(del_id)
