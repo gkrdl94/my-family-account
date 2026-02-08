@@ -199,22 +199,25 @@ def main():
 
         with col2:
             st.subheader("📋 최근 내역 (클릭해서 수정)")
+            
+            # [핵심] 버튼을 담을 빈 공간(Placeholder)을 미리 만듭니다.
+            # 코드는 순서대로 실행되지만, 이 공간에 나중에 버튼을 채워넣으면 화면상으로는 위에 뜹니다.
+            button_placeholder = st.empty()
+            
             if not df.empty:
-                # 최근 20개 정도 보여줌
                 edit_df = df.sort_values(by='날짜', ascending=False).head(20).copy()
                 edit_df['날짜'] = edit_df['날짜'].dt.strftime('%Y-%m-%d')
-                
                 edit_df = edit_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
                 all_cats = list(set(INCOME_CATS + EXPENSE_CATS))
 
-                # [핵심] 높이 자동 계산 (행 개수 * 35px + 헤더 높이 38px)
-                # 이렇게 하면 데이터 개수만큼 표 길이가 늘어나서 내부 스크롤이 사라집니다.
+                # 표 높이 자동 계산
                 dynamic_height = (len(edit_df) + 1) * 35 + 3
 
+                # 데이터 에디터 그리기 (화면상 아래에 위치)
                 edited_data = st.data_editor(
                     edit_df,
                     use_container_width=True,
-                    height=dynamic_height, # 여기서 높이를 강제로 지정!
+                    height=dynamic_height,
                     num_rows="fixed",
                     hide_index=True,
                     column_config={
@@ -225,17 +228,22 @@ def main():
                     }
                 )
 
-                if st.button("수정사항 저장하기"):
-                    if not edit_df.equals(edited_data):
-                        with st.spinner("저장 중..."):
-                            for index, row in edited_data.iterrows():
-                                original_row = edit_df.loc[index]
-                                for col in HEADERS:
-                                    if str(row[col]) != str(original_row[col]):
-                                        update_cell(index, col, row[col])
-                            st.success("완료!")
-                            time.sleep(1)
-                            st.rerun()
+                # [핵심] 아까 만들어둔 위쪽 빈 공간에 '저장 버튼'을 집어넣습니다.
+                with button_placeholder:
+                    # type="primary"로 버튼을 빨갛게 강조합니다.
+                    if st.button("💾 수정사항 저장하기 (수정 후 클릭)", type="primary", use_container_width=True):
+                        if not edit_df.equals(edited_data):
+                            with st.spinner("구글 시트에 저장 중..."):
+                                for index, row in edited_data.iterrows():
+                                    original_row = edit_df.loc[index]
+                                    for col in HEADERS:
+                                        if str(row[col]) != str(original_row[col]):
+                                            update_cell(index, col, row[col])
+                                st.success("수정이 완료되었습니다!")
+                                time.sleep(1)
+                                st.rerun()
+                        else:
+                            st.info("변경된 내용이 없습니다.")
             else:
                 st.info("데이터가 없습니다.")
 
@@ -300,7 +308,7 @@ def main():
             st.info("등록된 고정 지출이 없습니다.")
 
     # ==========================
-    # [탭 3] 달력 및 내역
+    # [탭 3] 달력
     # ==========================
     elif menu == "📅 달력":
         st.header("📅 월별 달력")
