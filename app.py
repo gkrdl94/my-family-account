@@ -200,22 +200,25 @@ def main():
         with col2:
             st.subheader("📋 최근 내역 (클릭해서 수정)")
             if not df.empty:
-                # [수정 1] 컬럼 순서 변경: 날짜 -> 구분 -> 금액 -> 카테고리 -> 내역 -> 사용자
-                edit_df = df.sort_values(by='날짜', ascending=False).head(15).copy()
+                # 최근 20개 정도 보여줌
+                edit_df = df.sort_values(by='날짜', ascending=False).head(20).copy()
                 edit_df['날짜'] = edit_df['날짜'].dt.strftime('%Y-%m-%d')
                 
-                # 재정렬
                 edit_df = edit_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
-
                 all_cats = list(set(INCOME_CATS + EXPENSE_CATS))
+
+                # [핵심] 높이 자동 계산 (행 개수 * 35px + 헤더 높이 38px)
+                # 이렇게 하면 데이터 개수만큼 표 길이가 늘어나서 내부 스크롤이 사라집니다.
+                dynamic_height = (len(edit_df) + 1) * 35 + 3
 
                 edited_data = st.data_editor(
                     edit_df,
                     use_container_width=True,
+                    height=dynamic_height, # 여기서 높이를 강제로 지정!
                     num_rows="fixed",
                     hide_index=True,
                     column_config={
-                        "금액": st.column_config.NumberColumn(format="%d원"), # 에디터에서는 숫자만 표시해야 수정이 원활함
+                        "금액": st.column_config.NumberColumn(format="%d원"),
                         "카테고리": st.column_config.SelectboxColumn(options=all_cats),
                         "사용자": st.column_config.SelectboxColumn(options=["해기", "에디", "같이"]),
                         "구분": st.column_config.SelectboxColumn(options=["지출", "수입"])
@@ -227,7 +230,6 @@ def main():
                         with st.spinner("저장 중..."):
                             for index, row in edited_data.iterrows():
                                 original_row = edit_df.loc[index]
-                                # 컬럼 순서가 바뀌었어도 데이터프레임 컬럼명으로 접근하므로 안전
                                 for col in HEADERS:
                                     if str(row[col]) != str(original_row[col]):
                                         update_cell(index, col, row[col])
@@ -269,7 +271,6 @@ def main():
 
         st.subheader("🚀 이번 달 가계부에 적용하기")
         if not fixed_df.empty:
-            # [수정] 금액 콤마 적용하여 보여주기 (읽기 전용이므로 스타일 적용)
             st.dataframe(fixed_df.style.format({"금액": "{:,.0f}원"}), use_container_width=True)
             
             if st.button("📅 이번 달 내역으로 일괄 등록하기", type="primary"):
@@ -342,7 +343,6 @@ def main():
                         d_exp = day_records[day_records['구분']=='지출']['금액'].sum()
                         d_inc = day_records[day_records['구분']=='수입']['금액'].sum()
                         
-                        # [수정] 콤마 적용
                         if d_exp > 0:
                             cell_content += f'<div style="color:red; font-size:0.85em;" class="amount-text">-{d_exp:,.0f}</div>'
                         if d_inc > 0:
@@ -363,11 +363,9 @@ def main():
                 d_expense = day_df[day_df['구분']=='지출']['금액'].sum()
                 
                 m1, m2 = st.columns(2)
-                # [수정] 콤마 적용
                 m1.metric("수입", f"{d_income:,.0f}원")
                 m2.metric("지출", f"{d_expense:,.0f}원")
                 
-                # [수정] 컬럼 순서 및 콤마 적용
                 display_table = day_df[['구분', '금액', '카테고리', '내역', '사용자']].copy()
                 st.dataframe(display_table.style.format({"금액": "{:,.0f}원"}), use_container_width=True, hide_index=True)
             else:
@@ -412,7 +410,6 @@ def main():
                     m1.metric("기간 수입", f"{total_inc:,.0f}원")
                     m2.metric("기간 지출", f"{total_exp:,.0f}원")
 
-                    # [수정] 콤마 적용 및 컬럼 재정렬
                     display_filtered = filtered_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']].sort_values(by='날짜', ascending=False)
                     st.dataframe(display_filtered.style.format({"금액": "{:,.0f}원"}), use_container_width=True)
                 else:
@@ -431,5 +428,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
