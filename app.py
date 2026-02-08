@@ -12,9 +12,10 @@ import time
 JSON_FILE = 'family-ledger-486809-9594b880837a.json'
 SPREADSHEET_NAME = '가계부데이터' 
 HEADERS = ['날짜', '구분', '사용자', '카테고리', '내역', '금액']
+FIXED_HEADERS = ['일자', '구분', '사용자', '카테고리', '내역', '금액'] # 고정지출용 헤더
+
 COL_MAP = {'날짜': 1, '구분': 2, '사용자': 3, '카테고리': 4, '내역': 5, '금액': 6}
 
-# [수정] 카테고리 목록 정의
 INCOME_CATS = ["월급", "월세", "성과급", "부수입", "기타"]
 EXPENSE_CATS = ["식비", "외식/배달", "쇼핑", "교통", "주거/통신", "의료/건강", "임신/육아", "저축", "기타"]
 
@@ -24,7 +25,7 @@ def get_client():
         # 로컬 환경
         creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_FILE, scope)
     except FileNotFoundError:
-        # 클라우드 배포 환경
+        # 클라우드 환경
         try:
             key_dict = dict(st.secrets["gcp_service_account"])
             creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
@@ -33,6 +34,7 @@ def get_client():
     client = gspread.authorize(creds)
     return client
 
+# 메인 데이터 가져오기
 def get_data():
     try:
         client = get_client()
@@ -46,12 +48,31 @@ def get_data():
 
         data = sheet.get_all_records()
         if not data: return pd.DataFrame(columns=HEADERS)
-            
         df = pd.DataFrame(data)
         if '날짜' not in df.columns: return pd.DataFrame(columns=HEADERS)
         return df
     except:
         return pd.DataFrame(columns=HEADERS)
+
+# 고정 지출 데이터 가져오기 (없으면 시트 생성)
+def get_fixed_data():
+    try:
+        client = get_client()
+        if not client: return pd.DataFrame(columns=FIXED_HEADERS)
+        
+        # '고정지출' 워크시트가 없으면 생성
+        try:
+            sheet = client.open(SPREADSHEET_NAME).worksheet("고정지출")
+        except:
+            sheet = client.open(SPREADSHEET_NAME).add_worksheet(title="고정지출", rows=100, cols=10)
+            sheet.append_row(FIXED_HEADERS)
+            return pd.DataFrame(columns=FIXED_HEADERS)
+
+        data = sheet.get_all_records()
+        if not data: return pd.DataFrame(columns=FIXED_HEADERS)
+        return pd.DataFrame(data)
+    except:
+        return pd.DataFrame(columns=FIXED_HEADERS)
 
 def add_row(date, type_, user, category, item, amount):
     client = get_client()
@@ -59,9 +80,20 @@ def add_row(date, type_, user, category, item, amount):
     if not sheet.row_values(1): sheet.append_row(HEADERS)
     sheet.append_row([str(date), type_, user, category, item, int(amount)])
 
+def add_fixed_row(day, type_, user, category, item, amount):
+    client = get_client()
+    sheet = client.open(SPREADSHEET_NAME).worksheet("고정지출")
+    if not sheet.row_values(1): sheet.append_row(FIXED_HEADERS)
+    sheet.append_row([int(day), type_, user, category, item, int(amount)])
+
 def delete_row(row_index):
     client = get_client()
     sheet = client.open(SPREADSHEET_NAME).sheet1
+    sheet.delete_rows(row_index + 2)
+
+def delete_fixed_row(row_index):
+    client = get_client()
+    sheet = client.open(SPREADSHEET_NAME).worksheet("고정지출")
     sheet.delete_rows(row_index + 2)
 
 def update_cell(row_idx, col_name, new_value):
@@ -79,7 +111,7 @@ def main():
     st.set_page_config(page_title="우리집 가계부", layout="wide", page_icon="🏡")
     today = datetime.now()
 
-    # [수정] 모바일 달력을 위한 CSS 스타일 주입
+    # CSS (모바일 달력 등)
     st.markdown("""
     <style>
     .calendar-container {
@@ -98,21 +130,19 @@ def main():
         border: 1px solid #e0e0e0;
         border-radius: 5px;
         padding: 4px;
-        min-height: 60px;
-        font-size: 0.75em;
+        min-height: 50px;
+        font-size: 0.7em;
         position: relative;
     }
-    /* 모바일 글자 크기 조정 */
     @media (max-width: 600px) {
-        .day-cell { min-height: 50px; font-size: 0.65em; }
-        .amount-text { font-size: 0.9em; }
+        .day-cell { min-height: 45px; font-size: 0.65em; }
     }
     </style>
     """, unsafe_allow_html=True)
 
     with st.sidebar:
         st.title("🏡 우리집 가계부")
-        menu = st.radio("메뉴 이동", ["📝 입력 및 홈", "📅 달력 및 내역", "📊 맞춤형 분석"])
+        menu = st.radio("메뉴 이동", ["📝 입력 및 홈", "🔄 고정 지출 관리", "📅 달력 및 내역", "📊 맞춤형 분석"])
         st.markdown("---")
         target_budget = st.number_input("목표 생활비(원)", value=2000000, step=100000)
 
@@ -134,6 +164,7 @@ def main():
     if menu == "📝 입력 및 홈":
         st.header(f"{today.month}월 가계부 현황")
         
+        # 예산 계산
         if not df.empty:
             this_month_df = df[(df['날짜'].dt.month == today.month) & (df['날짜'].dt.year == today.year)]
             total_expense = this_month_df[this_month_df['구분']=='지출']['금액'].sum()
@@ -151,20 +182,20 @@ def main():
         
         with col1:
             st.subheader("✍️ 내역 입력")
+            
+            # [중요 수정] 구분 버튼을 form 밖으로 뺌 (즉시 반응을 위해)
+            exp_type = st.radio("구분", ["지출", "수입"], horizontal=True, key="main_radio")
+            
+            # 구분에 따라 카테고리 목록 변경
+            if exp_type == "수입":
+                cat_options = INCOME_CATS
+            else:
+                cat_options = EXPENSE_CATS
+
             with st.form("input_form", clear_on_submit=True):
                 date = st.date_input("날짜", today)
-                
-                # [수정] 수입/지출 선택에 따라 카테고리 변경을 위해 st.radio를 먼저 배치
-                exp_type = st.radio("구분", ["지출", "수입"], horizontal=True)
-                
-                # [수정] 구분 값에 따라 카테고리 리스트 변경
-                if exp_type == "수입":
-                    current_cats = INCOME_CATS
-                else:
-                    current_cats = EXPENSE_CATS
-                
                 user = st.selectbox("사용자", ["남편", "아내", "공용"])
-                category = st.selectbox("카테고리", current_cats)
+                category = st.selectbox("카테고리", cat_options)
                 item = st.text_input("내용")
                 amount = st.number_input("금액", min_value=0, step=1000)
                 
@@ -179,8 +210,6 @@ def main():
             if not df.empty:
                 edit_df = df.sort_values(by='날짜', ascending=False).head(15).copy()
                 edit_df['날짜'] = edit_df['날짜'].dt.strftime('%Y-%m-%d')
-                
-                # 수정 모드에서는 모든 카테고리를 합쳐서 보여줌 (오류 방지)
                 all_cats = list(set(INCOME_CATS + EXPENSE_CATS))
 
                 edited_data = st.data_editor(
@@ -211,7 +240,80 @@ def main():
                 st.info("데이터가 없습니다.")
 
     # ==========================
-    # [탭 2] 달력 및 내역 (모바일 최적화)
+    # [탭 2] 고정 지출 관리 (NEW)
+    # ==========================
+    elif menu == "🔄 고정 지출 관리":
+        st.header("🔄 매월 고정 지출/수입 설정")
+        st.info("매달 반복되는 월급, 월세 등을 등록해두고 한 번에 입력하세요.")
+
+        fixed_df = get_fixed_data()
+
+        # 1. 고정 지출 등록 폼
+        with st.expander("➕ 새 고정 항목 추가하기", expanded=True):
+            # 구분 버튼을 form 밖으로 (반응형)
+            f_type = st.radio("구분", ["지출", "수입"], horizontal=True, key="fixed_radio")
+            f_cats = INCOME_CATS if f_type == "수입" else EXPENSE_CATS
+
+            with st.form("fixed_form", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                day = c1.number_input("매월 며칠?", min_value=1, max_value=31, value=1)
+                amount = c2.number_input("금액", min_value=0, step=10000)
+                
+                c3, c4 = st.columns(2)
+                user = c3.selectbox("사용자", ["남편", "아내", "공용"])
+                category = c4.selectbox("카테고리", f_cats)
+                item = st.text_input("내용 (예: 월세, 넷플릭스)")
+                
+                if st.form_submit_button("리스트에 추가"):
+                    add_fixed_row(day, f_type, user, category, item, amount)
+                    st.success("고정 리스트에 추가되었습니다!")
+                    time.sleep(0.5)
+                    st.rerun()
+
+        st.divider()
+
+        # 2. 이번 달 가계부에 일괄 적용하기
+        st.subheader("🚀 이번 달 가계부에 적용하기")
+        
+        if not fixed_df.empty:
+            st.write("아래 리스트를 확인하고 버튼을 누르면, **이번 달 날짜로** 가계부에 자동 입력됩니다.")
+            st.dataframe(fixed_df, use_container_width=True)
+            
+            if st.button("📅 이번 달 내역으로 일괄 등록하기", type="primary"):
+                count = 0
+                for index, row in fixed_df.iterrows():
+                    # 이번 달 날짜 생성 (YYYY-MM-DD)
+                    try:
+                        # 날짜가 2월 30일 같은 경우 에러 방지 (그 달의 마지막 날로 처리하거나 try-except)
+                        target_day = int(row['일자'])
+                        last_day = calendar.monthrange(today.year, today.month)[1]
+                        if target_day > last_day: target_day = last_day
+                        
+                        target_date = today.replace(day=target_day).strftime('%Y-%m-%d')
+                        
+                        # 메인 시트에 추가
+                        add_row(target_date, row['구분'], row['사용자'], row['카테고리'], row['내역'], row['금액'])
+                        count += 1
+                    except Exception as e:
+                        st.error(f"에러 발생: {e}")
+                
+                st.success(f"총 {count}건이 이번 달 가계부에 등록되었습니다!")
+                time.sleep(1)
+                st.rerun()
+            
+            st.markdown("---")
+            st.subheader("🗑️ 고정 항목 삭제")
+            del_idx = st.number_input("삭제할 행 번호 (위 표의 왼쪽 숫자)", min_value=0, step=1)
+            if st.button("선택한 항목 영구 삭제"):
+                delete_fixed_row(del_idx)
+                st.warning("삭제되었습니다.")
+                st.rerun()
+                
+        else:
+            st.info("등록된 고정 지출이 없습니다. 위에서 추가해주세요.")
+
+    # ==========================
+    # [탭 3] 달력 및 내역
     # ==========================
     elif menu == "📅 달력 및 내역":
         st.header("📅 월별 달력")
@@ -219,12 +321,10 @@ def main():
         sel_year = c1.number_input("연도", value=today.year)
         sel_month = c2.number_input("월", value=today.month, min_value=1, max_value=12)
         
-        # [수정] CSS Grid를 활용한 반응형 달력 생성
         calendar.setfirstweekday(calendar.SUNDAY)
         cal = calendar.monthcalendar(sel_year, sel_month)
         week_korean = ['일', '월', '화', '수', '목', '금', '토']
         
-        # 1. 요일 헤더 그리기
         header_html = '<div class="calendar-container">'
         for i, w in enumerate(week_korean):
             color = "red" if i == 0 else "blue" if i == 6 else "black"
@@ -237,7 +337,6 @@ def main():
         else:
             month_data = pd.DataFrame(columns=HEADERS)
 
-        # 2. 날짜 칸 그리기
         grid_html = '<div class="calendar-container">'
         for week in cal:
             for i, day in enumerate(week):
@@ -257,7 +356,6 @@ def main():
                         d_exp = day_records[day_records['구분']=='지출']['금액'].sum()
                         d_inc = day_records[day_records['구분']=='수입']['금액'].sum()
                         
-                        # 금액 표시 (모바일에서는 작게)
                         if d_exp > 0:
                             cell_content += f'<div style="color:red; font-size:0.85em;" class="amount-text">-{d_exp:,.0f}</div>'
                         if d_inc > 0:
@@ -265,10 +363,8 @@ def main():
                 
                 grid_html += f'<div class="day-cell" style="background-color:{bg_color};">{cell_content}</div>'
         grid_html += '</div>'
-        
         st.markdown(grid_html, unsafe_allow_html=True)
 
-        # 상세 내역 보기
         st.divider()
         st.header("🔍 일별 상세 내역")
         selected_date = st.date_input("확인할 날짜 선택", today)
@@ -288,7 +384,9 @@ def main():
             else:
                 st.info("해당 날짜의 내역이 없습니다.")
 
-    # [탭 3] 맞춤형 분석
+    # ==========================
+    # [탭 4] 맞춤형 분석
+    # ==========================
     elif menu == "📊 맞춤형 분석":
         st.header("📊 맞춤형 상세 분석")
         
@@ -302,7 +400,6 @@ def main():
                     date_range = st.date_input("기간", (default_start, today))
                 with col_f2:
                     all_users = list(df['사용자'].unique())
-                    # 모든 카테고리 합쳐서 필터링 제공
                     all_cats = list(set(INCOME_CATS + EXPENSE_CATS))
                     selected_cats = st.multiselect("카테고리", all_cats, default=all_cats)
                     selected_users = st.multiselect("사용자", all_users, default=all_users)
