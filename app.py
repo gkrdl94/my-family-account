@@ -130,22 +130,26 @@ def check_password():
     
     # 에러 메시지
     if "password_correct" in st.session_state and st.session_state["password_correct"] == False:
-        st.error("땡! 다시 입력해보세요 😘")
 
     # 3. [NEW] 입력창 밑에 문구 추가
     st.markdown("---")
     st.markdown("💖 아껴쓰자! 예진이는 맘대로 써도돼") # 여기 문구를 원하는 대로 바꾸세요!
     
-    # 4. [NEW] 사진 넣기
-    # 깃허브에 'main.jpg'라는 이름으로 사진을 올리셨다면 아래 코드가 작동합니다.
-    image_file = "main.jpg" 
+    # 4. [NEW] 사진 넣기 (사이즈 조절 및 중앙 정렬)
+        image_file = "main.jpg"
+        
+        st.markdown("---") # 구분선
     
-    if os.path.exists(image_file):
-        st.image(image_file, caption="사랑하는 우리 가족", use_container_width=True)
-    else:
-        # 사진 파일이 아직 없을 때 보여줄 기본 이미지 (귀여운 고양이)
-        st.info("팁: 깃허브에 'main.jpg' 사진을 올리면 여기에 나옵니다!")
-        st.image("https://placekitten.com/400/300", caption="사진을 올려주세요!", use_container_width=True)
+        # 화면을 3분할(좌측여백:이미지공간:우측여백 = 1:2:1)해서 가운데에 이미지를 넣는 방식
+        col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
+    
+        with col_img2: # 가운데 공간에만 이미지를 그립니다.
+            if os.path.exists(image_file):
+                # use_container_width=True를 유지하면 가운데 컬럼(col_img2) 너비에 맞게 꽉 찹니다.
+                # 만약 더 작게 하고 싶으면 [1, 1, 1]로 바꾸거나 [1, 2, 1] 숫자를 조절해보세요.
+                st.image(image_file, caption="사랑하는 우리 가족", use_container_width=True)
+            else:
+                st.image("https://placekitten.com/400/300", caption="사진을 올려주세요!", use_container_width=True)
 
     return False
 
@@ -517,3 +521,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
