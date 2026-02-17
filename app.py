@@ -132,7 +132,6 @@ def check_password():
     if "password_correct" in st.session_state and st.session_state["password_correct"] == False:
 
     # 3. [NEW] 입력창 밑에 문구 추가
-    st.markdown("---")
     st.markdown("💖 아껴쓰자! 예진이는 맘대로 써도돼") # 여기 문구를 원하는 대로 바꾸세요!
     
     # 4. [NEW] 사진 넣기 (사이즈 조절 및 중앙 정렬)
@@ -521,5 +520,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
