@@ -6,7 +6,7 @@ import calendar
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import time
-import os # 사진 파일 확인용
+import os
 
 # --- 1. 설정 및 구글 시트 연결 ---
 
@@ -103,7 +103,7 @@ def update_cell(row_idx, col_name, new_value):
         except: pass
     sheet.update_cell(sheet_row, sheet_col, new_value)
 
-# --- [수정된] 로그인 화면 꾸미기 ---
+# --- 로그인 및 화면 꾸미기 ---
 def check_password():
     """Returns `True` if the user had a correct password."""
 
@@ -120,48 +120,42 @@ def check_password():
     if st.session_state["password_correct"]:
         return True
 
-    # 1. 제목
+    # 로그인 화면
     st.title("🔒 우리집 자산 관리")
-    
-    # 2. 비밀번호 입력창
     st.text_input(
         "비밀번호를 입력해주세요", type="password", on_change=password_entered, key="password"
     )
     
-    # 에러 메시지
     if "password_correct" in st.session_state and st.session_state["password_correct"] == False:
+        st.error("비밀번호를 입력해주세요!")
 
-    # 3. [NEW] 입력창 밑에 문구 추가
-    st.markdown("💖 아껴쓰자! 예진이는 맘대로 써도돼") # 여기 문구를 원하는 대로 바꾸세요!
+    st.markdown("---")
+    st.markdown("💖 아껴쓰자! 예진이는 맘대로 써도 돼") 
     
-    # 4. [NEW] 사진 넣기 (사이즈 조절 및 중앙 정렬)
+    # [수정됨] 사진 중앙 정렬 및 사이즈 조절 (1:2:1 비율)
     image_file = "main.jpg"
-    
-    st.markdown("---") # 구분선
-
-    # 화면을 3분할(좌측여백:이미지공간:우측여백 = 1:2:1)해서 가운데에 이미지를 넣는 방식
-    col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
-
-    with col_img2: # 가운데 공간에만 이미지를 그립니다.
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
         if os.path.exists(image_file):
-            # use_container_width=True를 유지하면 가운데 컬럼(col_img2) 너비에 맞게 꽉 찹니다.
-            # 만약 더 작게 하고 싶으면 [1, 1, 1]로 바꾸거나 [1, 2, 1] 숫자를 조절해보세요.
             st.image(image_file, caption="사랑하는 우리 가족", use_container_width=True)
         else:
+            # 사진 없을 때 기본 이미지
             st.image("https://placekitten.com/400/300", caption="사진을 올려주세요!", use_container_width=True)
 
     return False
 
 # --- 2. 메인 화면 ---
 def main():
+    # [필수] 페이지 설정은 무조건 맨 처음에!
     st.set_page_config(page_title="우리집 가계부", layout="wide", page_icon="🏡")
 
+    # 로그인 체크
     if not check_password():
         return
 
     today = datetime.now()
 
-    # CSS 스타일
+    # CSS 스타일 (모바일 달력)
     st.markdown("""
     <style>
     .calendar-container {
@@ -214,6 +208,7 @@ def main():
     if menu == "📝 입력 및 홈":
         st.header(f"{today.month}월 가계부 현황")
         
+        # 이번 달 데이터 필터링
         if not df.empty:
             this_month_df = df[(df['날짜'].dt.month == today.month) & (df['날짜'].dt.year == today.year)]
             total_expense = this_month_df[this_month_df['구분']=='지출']['금액'].sum()
@@ -234,10 +229,7 @@ def main():
             st.subheader("✍️ 내역 입력")
             exp_type = st.radio("구분", ["지출", "수입"], horizontal=True, key="main_radio")
             
-            if exp_type == "수입":
-                cat_options = INCOME_CATS
-            else:
-                cat_options = EXPENSE_CATS
+            cat_options = INCOME_CATS if exp_type == "수입" else EXPENSE_CATS
 
             with st.form("input_form", clear_on_submit=True):
                 date = st.date_input("날짜", today)
@@ -255,14 +247,18 @@ def main():
         with col2:
             st.subheader(f"📋 이번 달 내역 ({len(this_month_df)}건)")
             
+            # [수정] 버튼 위치 홀더 (표 위에 버튼 배치)
             button_placeholder = st.empty()
             
             if not this_month_df.empty:
+                # 이번 달 전체 내역 표시
                 edit_df = this_month_df.sort_values(by='날짜', ascending=False).copy()
                 edit_df['날짜'] = edit_df['날짜'].dt.strftime('%Y-%m-%d')
+                # 컬럼 순서 재정렬 (날짜, 구분, 금액 순)
                 edit_df = edit_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
                 all_cats = list(set(INCOME_CATS + EXPENSE_CATS))
 
+                # [수정] 높이 자동 계산 (스크롤 제거)
                 dynamic_height = (len(edit_df) + 1) * 35 + 3
 
                 edited_data = st.data_editor(
@@ -279,6 +275,7 @@ def main():
                     }
                 )
 
+                # 버튼 표시
                 with button_placeholder:
                     if st.button("💾 수정사항 저장하기 (홈)", type="primary", use_container_width=True, key="save_home"):
                         if not edit_df.equals(edited_data):
@@ -328,6 +325,7 @@ def main():
 
         st.subheader("🚀 이번 달 가계부에 적용하기")
         if not fixed_df.empty:
+            # 금액 콤마 포맷팅
             st.dataframe(fixed_df.style.format({"금액": "{:,.0f}원"}), use_container_width=True)
             
             if st.button("📅 이번 달 내역으로 일괄 등록하기", type="primary"):
@@ -400,6 +398,7 @@ def main():
                         d_exp = day_records[day_records['구분']=='지출']['금액'].sum()
                         d_inc = day_records[day_records['구분']=='수입']['금액'].sum()
                         
+                        # [수정] 콤마 포맷팅
                         if d_exp > 0:
                             cell_content += f'<div style="color:red; font-size:0.85em;" class="amount-text">-{d_exp:,.0f}</div>'
                         if d_inc > 0:
@@ -474,6 +473,7 @@ def main():
                     display_filtered['날짜'] = display_filtered['날짜'].dt.strftime('%Y-%m-%d')
                     display_filtered = display_filtered[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
 
+                    # [수정] 높이 자동 계산
                     anal_height = (len(display_filtered) + 1) * 35 + 3
 
                     edited_anal = st.data_editor(
@@ -520,6 +520,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
