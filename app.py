@@ -160,10 +160,12 @@ def main():
     if menu == "📝 입력 및 홈":
         st.header(f"{today.month}월 가계부 현황")
         
+        # 이번 달 데이터 필터링 (Metrics & 표 모두 사용)
         if not df.empty:
             this_month_df = df[(df['날짜'].dt.month == today.month) & (df['날짜'].dt.year == today.year)]
             total_expense = this_month_df[this_month_df['구분']=='지출']['금액'].sum()
         else:
+            this_month_df = pd.DataFrame(columns=HEADERS)
             total_expense = 0
 
         if target_budget > 0:
@@ -198,14 +200,14 @@ def main():
                     st.rerun()
 
         with col2:
-            st.subheader("📋 최근 내역 (클릭해서 수정)")
+            st.subheader(f"📋 이번 달 내역 ({len(this_month_df)}건)")
             
-            # [핵심] 버튼을 담을 빈 공간(Placeholder)을 미리 만듭니다.
-            # 코드는 순서대로 실행되지만, 이 공간에 나중에 버튼을 채워넣으면 화면상으로는 위에 뜹니다.
+            # 저장 버튼 공간 확보
             button_placeholder = st.empty()
             
-            if not df.empty:
-                edit_df = df.sort_values(by='날짜', ascending=False).head(20).copy()
+            if not this_month_df.empty:
+                # [수정] head(20) 제거하고 this_month_df 전체 사용
+                edit_df = this_month_df.sort_values(by='날짜', ascending=False).copy()
                 edit_df['날짜'] = edit_df['날짜'].dt.strftime('%Y-%m-%d')
                 edit_df = edit_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
                 all_cats = list(set(INCOME_CATS + EXPENSE_CATS))
@@ -213,7 +215,6 @@ def main():
                 # 표 높이 자동 계산
                 dynamic_height = (len(edit_df) + 1) * 35 + 3
 
-                # 데이터 에디터 그리기 (화면상 아래에 위치)
                 edited_data = st.data_editor(
                     edit_df,
                     use_container_width=True,
@@ -228,24 +229,22 @@ def main():
                     }
                 )
 
-                # [핵심] 아까 만들어둔 위쪽 빈 공간에 '저장 버튼'을 집어넣습니다.
                 with button_placeholder:
-                    # type="primary"로 버튼을 빨갛게 강조합니다.
-                    if st.button("💾 수정사항 저장하기 (수정 후 클릭)", type="primary", use_container_width=True):
+                    if st.button("💾 수정사항 저장하기 (홈)", type="primary", use_container_width=True, key="save_home"):
                         if not edit_df.equals(edited_data):
-                            with st.spinner("구글 시트에 저장 중..."):
+                            with st.spinner("저장 중..."):
                                 for index, row in edited_data.iterrows():
                                     original_row = edit_df.loc[index]
                                     for col in HEADERS:
                                         if str(row[col]) != str(original_row[col]):
                                             update_cell(index, col, row[col])
-                                st.success("수정이 완료되었습니다!")
+                                st.success("수정 완료!")
                                 time.sleep(1)
                                 st.rerun()
                         else:
-                            st.info("변경된 내용이 없습니다.")
+                            st.info("변경 사항 없음")
             else:
-                st.info("데이터가 없습니다.")
+                st.info("이번 달 데이터가 없습니다.")
 
     # ==========================
     # [탭 2] 고정 지출 관리
@@ -418,8 +417,50 @@ def main():
                     m1.metric("기간 수입", f"{total_inc:,.0f}원")
                     m2.metric("기간 지출", f"{total_exp:,.0f}원")
 
-                    display_filtered = filtered_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']].sort_values(by='날짜', ascending=False)
-                    st.dataframe(display_filtered.style.format({"금액": "{:,.0f}원"}), use_container_width=True)
+                    # [수정] 분석 탭에서도 수정 기능 추가
+                    
+                    # 1. 저장 버튼 공간 확보
+                    anal_button_placeholder = st.empty()
+
+                    # 2. 데이터 프레임 준비
+                    display_filtered = filtered_df.sort_values(by='날짜', ascending=False).copy()
+                    display_filtered['날짜'] = display_filtered['날짜'].dt.strftime('%Y-%m-%d')
+                    # 컬럼 순서 맞추기
+                    display_filtered = display_filtered[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
+
+                    # 3. 높이 자동 계산
+                    anal_height = (len(display_filtered) + 1) * 35 + 3
+
+                    # 4. 에디터 표시
+                    edited_anal = st.data_editor(
+                        display_filtered,
+                        use_container_width=True,
+                        height=anal_height,
+                        num_rows="fixed",
+                        hide_index=True,
+                        column_config={
+                            "금액": st.column_config.NumberColumn(format="%d원"),
+                            "카테고리": st.column_config.SelectboxColumn(options=all_cats),
+                            "사용자": st.column_config.SelectboxColumn(options=["해기", "에디", "같이"]),
+                            "구분": st.column_config.SelectboxColumn(options=["지출", "수입"])
+                        }
+                    )
+
+                    # 5. 저장 버튼 (상단 배치)
+                    with anal_button_placeholder:
+                        if st.button("💾 수정사항 저장하기 (분석)", type="primary", use_container_width=True, key="save_anal"):
+                            if not display_filtered.equals(edited_anal):
+                                with st.spinner("저장 중..."):
+                                    for index, row in edited_anal.iterrows():
+                                        original_row = display_filtered.loc[index]
+                                        for col in HEADERS:
+                                            if str(row[col]) != str(original_row[col]):
+                                                update_cell(index, col, row[col])
+                                    st.success("수정 완료!")
+                                    time.sleep(1)
+                                    st.rerun()
+                            else:
+                                st.info("변경 사항 없음")
                 else:
                     st.info("내역이 없습니다.")
             else:
