@@ -102,28 +102,24 @@ def update_cell(row_idx, col_name, new_value):
         except: pass
     sheet.update_cell(sheet_row, sheet_col, new_value)
 
-# --- [NEW] 로그인 함수 ---
+# --- 로그인 함수 ---
 def check_password():
     """Returns `True` if the user had a correct password."""
 
     def password_entered():
-        """Checks whether a password entered by the user is correct."""
         if st.session_state["password"] == st.secrets["app_password"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # 보안을 위해 입력한 비번 삭제
+            del st.session_state["password"]  
         else:
             st.session_state["password_correct"] = False
 
-    # 세션 상태 초기화
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
-    # 1. 이미 로그인 성공했으면 True 반환
     if st.session_state["password_correct"]:
         return True
 
-    # 2. 로그인 화면 보여주기
-    st.set_page_config(page_title="로그인 - 우리집 가계부", page_icon="🔒")
+    # [수정] 여기서 set_page_config를 호출하던 것을 제거함 (main에서 한 번만 호출하기 위해)
     st.title("🔒 로그인")
     st.text_input(
         "비밀번호를 입력하세요", type="password", on_change=password_entered, key="password"
@@ -136,13 +132,14 @@ def check_password():
 
 # --- 2. 메인 화면 ---
 def main():
-    # [NEW] 비밀번호 체크 (통과 못하면 여기서 멈춤)
+    # [핵심 수정] 페이지 설정을 무조건 제일 먼저 실행! (layout="wide" 적용)
+    st.set_page_config(page_title="우리집 가계부", layout="wide", page_icon="🏡")
+
+    # 비밀번호 체크
     if not check_password():
         return
 
-    # --- 여기서부터는 로그인 성공해야 실행됨 ---
-    # st.set_page_config는 check_password에서 이미 호출했으므로 중복 호출 방지를 위해 생략하거나 레이아웃만 설정
-    
+    # --- 로그인 성공 시 실행 ---
     today = datetime.now()
 
     # CSS 스타일
@@ -198,7 +195,7 @@ def main():
     if menu == "📝 입력 및 홈":
         st.header(f"{today.month}월 가계부 현황")
         
-        # 이번 달 데이터 필터링 (Metrics & 표 모두 사용)
+        # 이번 달 데이터 필터링
         if not df.empty:
             this_month_df = df[(df['날짜'].dt.month == today.month) & (df['날짜'].dt.year == today.year)]
             total_expense = this_month_df[this_month_df['구분']=='지출']['금액'].sum()
@@ -240,17 +237,14 @@ def main():
         with col2:
             st.subheader(f"📋 이번 달 내역 ({len(this_month_df)}건)")
             
-            # 저장 버튼 공간 확보
             button_placeholder = st.empty()
             
             if not this_month_df.empty:
-                # [수정] head(20) 제거하고 this_month_df 전체 사용
                 edit_df = this_month_df.sort_values(by='날짜', ascending=False).copy()
                 edit_df['날짜'] = edit_df['날짜'].dt.strftime('%Y-%m-%d')
                 edit_df = edit_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
                 all_cats = list(set(INCOME_CATS + EXPENSE_CATS))
 
-                # 표 높이 자동 계산
                 dynamic_height = (len(edit_df) + 1) * 35 + 3
 
                 edited_data = st.data_editor(
@@ -455,21 +449,15 @@ def main():
                     m1.metric("기간 수입", f"{total_inc:,.0f}원")
                     m2.metric("기간 지출", f"{total_exp:,.0f}원")
 
-                    # [수정] 분석 탭에서도 수정 기능 추가
-                    
-                    # 1. 저장 버튼 공간 확보
+                    # 수정 기능
                     anal_button_placeholder = st.empty()
 
-                    # 2. 데이터 프레임 준비
                     display_filtered = filtered_df.sort_values(by='날짜', ascending=False).copy()
                     display_filtered['날짜'] = display_filtered['날짜'].dt.strftime('%Y-%m-%d')
-                    # 컬럼 순서 맞추기
                     display_filtered = display_filtered[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
 
-                    # 3. 높이 자동 계산
                     anal_height = (len(display_filtered) + 1) * 35 + 3
 
-                    # 4. 에디터 표시
                     edited_anal = st.data_editor(
                         display_filtered,
                         use_container_width=True,
@@ -484,7 +472,6 @@ def main():
                         }
                     )
 
-                    # 5. 저장 버튼 (상단 배치)
                     with anal_button_placeholder:
                         if st.button("💾 수정사항 저장하기 (분석)", type="primary", use_container_width=True, key="save_anal"):
                             if not display_filtered.equals(edited_anal):
