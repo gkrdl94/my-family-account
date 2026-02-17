@@ -136,20 +136,20 @@ def check_password():
     st.markdown("💖 아껴쓰자! 예진이는 맘대로 써도돼") # 여기 문구를 원하는 대로 바꾸세요!
     
     # 4. [NEW] 사진 넣기 (사이즈 조절 및 중앙 정렬)
-        image_file = "main.jpg"
-        
-        st.markdown("---") # 구분선
+    image_file = "main.jpg"
     
-        # 화면을 3분할(좌측여백:이미지공간:우측여백 = 1:2:1)해서 가운데에 이미지를 넣는 방식
-        col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
-    
-        with col_img2: # 가운데 공간에만 이미지를 그립니다.
-            if os.path.exists(image_file):
-                # use_container_width=True를 유지하면 가운데 컬럼(col_img2) 너비에 맞게 꽉 찹니다.
-                # 만약 더 작게 하고 싶으면 [1, 1, 1]로 바꾸거나 [1, 2, 1] 숫자를 조절해보세요.
-                st.image(image_file, caption="사랑하는 우리 가족", use_container_width=True)
-            else:
-                st.image("https://placekitten.com/400/300", caption="사진을 올려주세요!", use_container_width=True)
+    st.markdown("---") # 구분선
+
+    # 화면을 3분할(좌측여백:이미지공간:우측여백 = 1:2:1)해서 가운데에 이미지를 넣는 방식
+    col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
+
+    with col_img2: # 가운데 공간에만 이미지를 그립니다.
+        if os.path.exists(image_file):
+            # use_container_width=True를 유지하면 가운데 컬럼(col_img2) 너비에 맞게 꽉 찹니다.
+            # 만약 더 작게 하고 싶으면 [1, 1, 1]로 바꾸거나 [1, 2, 1] 숫자를 조절해보세요.
+            st.image(image_file, caption="사랑하는 우리 가족", use_container_width=True)
+        else:
+            st.image("https://placekitten.com/400/300", caption="사진을 올려주세요!", use_container_width=True)
 
     return False
 
@@ -521,4 +521,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
