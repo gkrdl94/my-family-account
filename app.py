@@ -102,9 +102,47 @@ def update_cell(row_idx, col_name, new_value):
         except: pass
     sheet.update_cell(sheet_row, sheet_col, new_value)
 
+# --- [NEW] 로그인 함수 ---
+def check_password():
+    """Returns `True` if the user had a correct password."""
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == st.secrets["app_password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # 보안을 위해 입력한 비번 삭제
+        else:
+            st.session_state["password_correct"] = False
+
+    # 세션 상태 초기화
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    # 1. 이미 로그인 성공했으면 True 반환
+    if st.session_state["password_correct"]:
+        return True
+
+    # 2. 로그인 화면 보여주기
+    st.set_page_config(page_title="로그인 - 우리집 가계부", page_icon="🔒")
+    st.title("🔒 로그인")
+    st.text_input(
+        "비밀번호를 입력하세요", type="password", on_change=password_entered, key="password"
+    )
+    
+    if "password_correct" in st.session_state and st.session_state["password_correct"] == False:
+        st.error("😕 비밀번호가 틀렸습니다.")
+
+    return False
+
 # --- 2. 메인 화면 ---
 def main():
-    st.set_page_config(page_title="우리집 가계부", layout="wide", page_icon="🏡")
+    # [NEW] 비밀번호 체크 (통과 못하면 여기서 멈춤)
+    if not check_password():
+        return
+
+    # --- 여기서부터는 로그인 성공해야 실행됨 ---
+    # st.set_page_config는 check_password에서 이미 호출했으므로 중복 호출 방지를 위해 생략하거나 레이아웃만 설정
+    
     today = datetime.now()
 
     # CSS 스타일
