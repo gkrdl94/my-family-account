@@ -6,6 +6,7 @@ import calendar
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import time
+import os # 사진 파일 확인용
 
 # --- 1. 설정 및 구글 시트 연결 ---
 
@@ -102,7 +103,7 @@ def update_cell(row_idx, col_name, new_value):
         except: pass
     sheet.update_cell(sheet_row, sheet_col, new_value)
 
-# --- 로그인 함수 ---
+# --- [수정된] 로그인 화면 꾸미기 ---
 def check_password():
     """Returns `True` if the user had a correct password."""
 
@@ -119,27 +120,42 @@ def check_password():
     if st.session_state["password_correct"]:
         return True
 
-    # [수정] 여기서 set_page_config를 호출하던 것을 제거함 (main에서 한 번만 호출하기 위해)
-    st.title("🔒 로그인")
+    # 1. 제목
+    st.title("🔒 우리집 자산 관리")
+    
+    # 2. 비밀번호 입력창
     st.text_input(
-        "비밀번호를 입력하세요", type="password", on_change=password_entered, key="password"
+        "비밀번호를 입력해주세요", type="password", on_change=password_entered, key="password"
     )
     
+    # 에러 메시지
     if "password_correct" in st.session_state and st.session_state["password_correct"] == False:
-        st.error("😕 비밀번호가 틀렸습니다.")
+        st.error("땡! 다시 입력해보세요 😘")
+
+    # 3. [NEW] 입력창 밑에 문구 추가
+    st.markdown("---")
+    st.markdown("💖 아껴쓰자! 예진이는 맘대로 써도돼") # 여기 문구를 원하는 대로 바꾸세요!
+    
+    # 4. [NEW] 사진 넣기
+    # 깃허브에 'main.jpg'라는 이름으로 사진을 올리셨다면 아래 코드가 작동합니다.
+    image_file = "main.jpg" 
+    
+    if os.path.exists(image_file):
+        st.image(image_file, caption="사랑하는 우리 가족", use_container_width=True)
+    else:
+        # 사진 파일이 아직 없을 때 보여줄 기본 이미지 (귀여운 고양이)
+        st.info("팁: 깃허브에 'main.jpg' 사진을 올리면 여기에 나옵니다!")
+        st.image("https://placekitten.com/400/300", caption="사진을 올려주세요!", use_container_width=True)
 
     return False
 
 # --- 2. 메인 화면 ---
 def main():
-    # [핵심 수정] 페이지 설정을 무조건 제일 먼저 실행! (layout="wide" 적용)
     st.set_page_config(page_title="우리집 가계부", layout="wide", page_icon="🏡")
 
-    # 비밀번호 체크
     if not check_password():
         return
 
-    # --- 로그인 성공 시 실행 ---
     today = datetime.now()
 
     # CSS 스타일
@@ -195,7 +211,6 @@ def main():
     if menu == "📝 입력 및 홈":
         st.header(f"{today.month}월 가계부 현황")
         
-        # 이번 달 데이터 필터링
         if not df.empty:
             this_month_df = df[(df['날짜'].dt.month == today.month) & (df['날짜'].dt.year == today.year)]
             total_expense = this_month_df[this_month_df['구분']=='지출']['금액'].sum()
