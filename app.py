@@ -130,9 +130,9 @@ def check_password():
         st.error("비밀번호를 입력해주세요!")
 
     st.markdown("---")
-    st.markdown("💖 아껴쓰자! 예진이는 맘대로 써도 돼") 
+    st.markdown("### 💖 아껴쓰자! 예진이는 맘대로 써도 돼") 
     
-    # [수정됨] 사진 중앙 정렬 및 사이즈 조절 (1:2:1 비율)
+    # 사진 중앙 정렬 및 사이즈 조절 (1:2:1 비율)
     image_file = "main.jpg"
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
@@ -247,18 +247,17 @@ def main():
         with col2:
             st.subheader(f"📋 이번 달 내역 ({len(this_month_df)}건)")
             
-            # [수정] 버튼 위치 홀더 (표 위에 버튼 배치)
+            # 버튼 위치 홀더 (표 위에 버튼 배치)
             button_placeholder = st.empty()
             
             if not this_month_df.empty:
                 # 이번 달 전체 내역 표시
                 edit_df = this_month_df.sort_values(by='날짜', ascending=False).copy()
                 edit_df['날짜'] = edit_df['날짜'].dt.strftime('%Y-%m-%d')
-                # 컬럼 순서 재정렬 (날짜, 구분, 금액 순)
                 edit_df = edit_df[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
                 all_cats = list(set(INCOME_CATS + EXPENSE_CATS))
 
-                # [수정] 높이 자동 계산 (스크롤 제거)
+                # 높이 자동 계산 (스크롤 제거)
                 dynamic_height = (len(edit_df) + 1) * 35 + 3
 
                 edited_data = st.data_editor(
@@ -325,7 +324,6 @@ def main():
 
         st.subheader("🚀 이번 달 가계부에 적용하기")
         if not fixed_df.empty:
-            # 금액 콤마 포맷팅
             st.dataframe(fixed_df.style.format({"금액": "{:,.0f}원"}), use_container_width=True)
             
             if st.button("📅 이번 달 내역으로 일괄 등록하기", type="primary"):
@@ -398,7 +396,6 @@ def main():
                         d_exp = day_records[day_records['구분']=='지출']['금액'].sum()
                         d_inc = day_records[day_records['구분']=='수입']['금액'].sum()
                         
-                        # [수정] 콤마 포맷팅
                         if d_exp > 0:
                             cell_content += f'<div style="color:red; font-size:0.85em;" class="amount-text">-{d_exp:,.0f}</div>'
                         if d_inc > 0:
@@ -463,17 +460,59 @@ def main():
                     
                     st.divider()
                     m1, m2 = st.columns(2)
-                    m1.metric("기간 수입", f"{total_inc:,.0f}원")
-                    m2.metric("기간 지출", f"{total_exp:,.0f}원")
+                    m1.metric("선택 기간 수입 합계", f"{total_inc:,.0f}원")
+                    m2.metric("선택 기간 지출 합계", f"{total_exp:,.0f}원")
+
+                    st.divider()
+
+                    # ==========================================
+                    # [NEW] 시각화 그래프 섹션 (선택형)
+                    # ==========================================
+                    st.subheader("📈 지출 분석 차트")
+                    
+                    # 지출 데이터만 필터링 (일반적으로 분석은 지출 위주로 봄)
+                    exp_df = filtered_df[filtered_df['구분'] == '지출']
+                    
+                    if not exp_df.empty:
+                        # 사용자가 원하는 그래프 종류를 선택하도록 라디오 버튼 제공
+                        chart_type = st.radio(
+                            "보고 싶은 차트를 선택하세요", 
+                            ["카테고리별 비중 (원형)", "일별 지출 흐름 (막대)", "사용자별 지출 (막대)"], 
+                            horizontal=True
+                        )
+                        
+                        if chart_type == "카테고리별 비중 (원형)":
+                            # 카테고리별로 금액을 합산
+                            cat_sum = exp_df.groupby('카테고리')['금액'].sum().reset_index()
+                            fig = px.pie(cat_sum, values='금액', names='카테고리', hole=0.4)
+                            fig.update_traces(textposition='inside', textinfo='percent+label')
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                        elif chart_type == "일별 지출 흐름 (막대)":
+                            # 날짜별로 금액을 합산
+                            daily_sum = exp_df.groupby('날짜')['금액'].sum().reset_index()
+                            fig = px.bar(daily_sum, x='날짜', y='금액', text_auto='~s')
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                        elif chart_type == "사용자별 지출 (막대)":
+                            # 사용자별로 금액을 합산
+                            user_sum = exp_df.groupby('사용자')['금액'].sum().reset_index()
+                            fig = px.bar(user_sum, x='사용자', y='금액', color='사용자', text_auto='~s')
+                            st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("선택하신 기간에 지출 내역이 없어 그래프를 그릴 수 없습니다.")
+                    
+                    st.divider()
+                    # ==========================================
 
                     # 수정 기능
+                    st.subheader("📝 상세 내역 수정")
                     anal_button_placeholder = st.empty()
 
                     display_filtered = filtered_df.sort_values(by='날짜', ascending=False).copy()
                     display_filtered['날짜'] = display_filtered['날짜'].dt.strftime('%Y-%m-%d')
                     display_filtered = display_filtered[['날짜', '구분', '금액', '카테고리', '내역', '사용자']]
 
-                    # [수정] 높이 자동 계산
                     anal_height = (len(display_filtered) + 1) * 35 + 3
 
                     edited_anal = st.data_editor(
