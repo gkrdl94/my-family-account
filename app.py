@@ -101,16 +101,25 @@ def update_cell(row_idx, col_name, new_value):
         except: pass
     sheet.update_cell(sheet_row, sheet_col, new_value)
 
-# --- [NEW] 팝업(Dialog) 기능 정의 ---
+# --- [NEW] 여러 줄 삭제 지원 함수 ---
+def delete_multiple_rows(indices_to_delete):
+    client = get_client()
+    sheet = client.open(SPREADSHEET_NAME).sheet1
+    
+    # 구글 시트는 여러 행을 한 번에 지우는 batch 삭제가 비효율적이거나 어려울 때가 있으므로
+    # 인덱스가 꼬이지 않도록 역순으로 정렬해서 삭제합니다.
+    sorted_indices = sorted(indices_to_delete, reverse=True)
+    for idx in sorted_indices:
+        sheet.delete_rows(idx + 2)
+
+# --- 팝업(Dialog) 기능 정의 ---
 @st.dialog("상세 내역 확인")
 def popup_details(df_to_show, title):
     st.markdown(f"#### {title}")
     if not df_to_show.empty:
-        # 보여주기용 데이터 정리
         show_df = df_to_show[['구분', '금액', '카테고리', '내역', '사용자']].copy()
         st.dataframe(show_df.style.format({"금액": "{:,.0f}원"}), use_container_width=True, hide_index=True)
         
-        # 요약 정보 추가
         exp_sum = df_to_show[df_to_show['구분']=='지출']['금액'].sum()
         inc_sum = df_to_show[df_to_show['구분']=='수입']['금액'].sum()
         c1, c2 = st.columns(2)
@@ -164,7 +173,6 @@ def main():
 
     today = datetime.now()
 
-    # 홈 화면 월 이동을 위한 상태 저장
     if "home_year" not in st.session_state:
         st.session_state.home_year = today.year
     if "home_month" not in st.session_state:
@@ -192,7 +200,6 @@ def main():
     # ==========================
     if menu == "📝 입력 및 홈":
         
-        # [수정됨] 월 이동 화살표 네비게이션
         nav1, nav2, nav3 = st.columns([1, 2, 1])
         with nav1:
             if st.button("◀ 이전 달", use_container_width=True):
@@ -211,7 +218,6 @@ def main():
                     st.session_state.home_year += 1
                 st.rerun()
 
-        # 선택한 월 기준으로 데이터 필터링
         if not df.empty:
             this_month_df = df[(df['날짜'].dt.month == st.session_state.home_month) & (df['날짜'].dt.year == st.session_state.home_year)]
             total_expense = this_month_df[this_month_df['구분']=='지출']['금액'].sum()
@@ -249,7 +255,7 @@ def main():
 
         with col2:
             st.subheader(f"📋 {st.session_state.home_month}월 전체 내역 ({len(this_month_df)}건)")
-            
+            st.caption("표 왼쪽에 체크박스를 선택하고 휴지통을 누르거나 Delete키를 눌러 내역을 삭제할 수 있습니다.")
             button_placeholder = st.empty()
             
             if not this_month_df.empty:
@@ -260,11 +266,12 @@ def main():
 
                 dynamic_height = (len(edit_df) + 1) * 35 + 3
 
+                # num_rows="dynamic" 옵션을 통해 삭제 기능 활성화
                 edited_data = st.data_editor(
                     edit_df,
                     use_container_width=True,
                     height=dynamic_height,
-                    num_rows="fixed",
+                    num_rows="dynamic", # 추가 및 삭제 기능 켜기
                     hide_index=True,
                     column_config={
                         "금액": st.column_config.NumberColumn(format="%d원"),
@@ -275,19 +282,31 @@ def main():
                 )
 
                 with button_placeholder:
-                    if st.button("💾 수정사항 저장하기 (홈)", type="primary", use_container_width=True, key="save_home"):
-                        if not edit_df.equals(edited_data):
-                            with st.spinner("저장 중..."):
-                                for index, row in edited_data.iterrows():
+                    if st.button("💾 저장 (수정/삭제 완료)", type="primary", use_container_width=True, key="save_home"):
+                        with st.spinner("구글 시트 연동 중..."):
+                            # 1. 삭제된 행 처리
+                            # 원본에는 있는데 편집된 데이터에는 없는 인덱스를 찾음
+                            deleted_indices = set(edit_df.index) - set(edited_data.index)
+                            if deleted_indices:
+                                delete_multiple_rows(list(deleted_indices))
+                            
+                            # 2. 수정된 데이터 처리
+                            # 편집된 데이터가 원본과 다른 경우 업데이트 수행
+                            for index, row in edited_data.iterrows():
+                                if index in edit_df.index: # 기존에 있던 행이면 수정 여부 검사
                                     original_row = edit_df.loc[index]
                                     for col in HEADERS:
                                         if str(row[col]) != str(original_row[col]):
                                             update_cell(index, col, row[col])
-                                st.success("수정 완료!")
-                                time.sleep(1)
-                                st.rerun()
-                        else:
-                            st.info("변경 사항 없음")
+                                else:
+                                    # 새로 추가된 행(UI 상에서 직접 + 눌러 추가한 경우)
+                                    # (권장하지는 않으나, 예외 처리)
+                                    add_row(row['날짜'], row['구분'], row['사용자'], row['카테고리'], row['내역'], row['금액'])
+
+                            st.success("반영되었습니다!")
+                            time.sleep(1)
+                            st.rerun()
+
             else:
                 st.info("해당 월의 데이터가 없습니다.")
 
@@ -366,7 +385,6 @@ def main():
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # 달력 헤더 (요일)
         cols = st.columns(7)
         for i, w in enumerate(week_korean):
             color = "red" if i == 0 else "blue" if i == 6 else "black"
@@ -377,7 +395,6 @@ def main():
         else:
             month_data = pd.DataFrame(columns=HEADERS)
 
-        # [수정됨] 달력을 버튼 그리드로 생성 (날짜 클릭 시 팝업 띄움)
         for week in cal:
             cols = st.columns(7)
             for i, day in enumerate(week):
@@ -387,16 +404,14 @@ def main():
                         exp = day_df[day_df['구분']=='지출']['금액'].sum()
                         inc = day_df[day_df['구분']=='수입']['금액'].sum()
                         
-                        # 버튼 텍스트 구성
                         btn_label = f"{day}일"
                         if exp > 0: btn_label += f"\n-{exp:,.0f}"
                         if inc > 0: btn_label += f"\n+{inc:,.0f}"
                         
-                        # 날짜 버튼을 누르면 팝업(Dialog) 호출
                         if st.button(btn_label, key=f"cal_{sel_year}_{sel_month}_{day}", use_container_width=True):
                             popup_details(day_df, f"📅 {sel_year}년 {sel_month}월 {day}일 상세 내역")
                     else:
-                        st.write("") # 빈 공간 처리
+                        st.write("") 
 
         st.divider()
         st.info("💡 달력의 날짜 칸(버튼)을 직접 터치하시면 팝업으로 상세 내역을 확인할 수 있습니다.")
@@ -462,7 +477,6 @@ def main():
                             )
                             st.plotly_chart(fig, use_container_width=True)
                             
-                            # [NEW] 특정 카테고리 팝업 보기
                             st.markdown("#### 🔍 특정 카테고리 세부내역 보기")
                             p_col1, p_col2 = st.columns([3, 1])
                             with p_col1:
@@ -496,11 +510,12 @@ def main():
 
                     anal_height = (len(display_filtered) + 1) * 35 + 3
 
+                    # 분석 탭에서도 삭제 기능 활성화
                     edited_anal = st.data_editor(
                         display_filtered,
                         use_container_width=True,
                         height=anal_height,
-                        num_rows="fixed",
+                        num_rows="dynamic",
                         hide_index=True,
                         column_config={
                             "금액": st.column_config.NumberColumn(format="%d원"),
@@ -511,32 +526,29 @@ def main():
                     )
 
                     with anal_button_placeholder:
-                        if st.button("💾 수정사항 저장하기 (분석)", type="primary", use_container_width=True, key="save_anal"):
-                            if not display_filtered.equals(edited_anal):
-                                with st.spinner("저장 중..."):
-                                    for index, row in edited_anal.iterrows():
+                        if st.button("💾 저장 (수정/삭제 완료)", type="primary", use_container_width=True, key="save_anal"):
+                            with st.spinner("구글 시트 연동 중..."):
+                                deleted_indices = set(display_filtered.index) - set(edited_anal.index)
+                                if deleted_indices:
+                                    delete_multiple_rows(list(deleted_indices))
+                                
+                                for index, row in edited_anal.iterrows():
+                                    if index in display_filtered.index:
                                         original_row = display_filtered.loc[index]
                                         for col in HEADERS:
                                             if str(row[col]) != str(original_row[col]):
                                                 update_cell(index, col, row[col])
-                                    st.success("수정 완료!")
-                                    time.sleep(1)
-                                    st.rerun()
-                            else:
-                                st.info("변경 사항 없음")
+                                    else:
+                                        add_row(row['날짜'], row['구분'], row['사용자'], row['카테고리'], row['내역'], row['금액'])
+                                
+                                st.success("반영되었습니다!")
+                                time.sleep(1)
+                                st.rerun()
+
                 else:
                     st.info("내역이 없습니다.")
             else:
                 st.info("기간을 선택해주세요.")
                 
-            st.divider()
-            with st.expander("🗑️ 데이터 삭제"):
-                st.dataframe(df.sort_values(by='날짜', ascending=False).head(5).style.format({"금액": "{:,.0f}원"})) 
-                del_id = st.number_input("삭제할 행 번호", min_value=0, step=1)
-                if st.button("삭제 실행"):
-                    delete_row(del_id)
-                    st.success("삭제되었습니다!")
-                    st.rerun()
-
 if __name__ == '__main__':
     main()
