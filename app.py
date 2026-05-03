@@ -101,18 +101,9 @@ def update_cell(row_idx, col_name, new_value):
         except: pass
     sheet.update_cell(sheet_row, sheet_col, new_value)
 
-# --- [NEW] 여러 줄 삭제 지원 함수 ---
-def delete_multiple_rows(indices_to_delete):
-    client = get_client()
-    sheet = client.open(SPREADSHEET_NAME).sheet1
-    
-    # 구글 시트는 여러 행을 한 번에 지우는 batch 삭제가 비효율적이거나 어려울 때가 있으므로
-    # 인덱스가 꼬이지 않도록 역순으로 정렬해서 삭제합니다.
-    sorted_indices = sorted(indices_to_delete, reverse=True)
-    for idx in sorted_indices:
-        sheet.delete_rows(idx + 2)
 
-# --- 팝업(Dialog) 기능 정의 ---
+# --- [NEW] 팝업 기능 정의 ---
+
 @st.dialog("상세 내역 확인")
 def popup_details(df_to_show, title):
     st.markdown(f"#### {title}")
@@ -127,6 +118,26 @@ def popup_details(df_to_show, title):
         c2.metric("수입 합계", f"{inc_sum:,.0f}원")
     else:
         st.info("해당 내역이 없습니다.")
+
+# [새로 추가된 기능] 삭제 확인 팝업 (Yes/No)
+@st.dialog("⚠️ 내역 삭제 확인")
+def confirm_delete_dialog(row_idx, item_info):
+    st.error("아래 내역을 정말 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.")
+    st.markdown(f"> **{item_info}**")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("✔️ 네, 삭제합니다", type="primary", use_container_width=True):
+            with st.spinner("삭제 중..."):
+                delete_row(row_idx)
+            st.success("성공적으로 삭제되었습니다!")
+            time.sleep(1)
+            st.rerun()
+    with c2:
+        if st.button("❌ 아니요 (취소)", use_container_width=True):
+            st.rerun()
+
 
 # --- 로그인 및 화면 꾸미기 ---
 def check_password():
@@ -255,7 +266,7 @@ def main():
 
         with col2:
             st.subheader(f"📋 {st.session_state.home_month}월 전체 내역 ({len(this_month_df)}건)")
-            st.caption("표 왼쪽에 체크박스를 선택하고 휴지통을 누르거나 Delete키를 눌러 내역을 삭제할 수 있습니다.")
+            
             button_placeholder = st.empty()
             
             if not this_month_df.empty:
@@ -266,12 +277,12 @@ def main():
 
                 dynamic_height = (len(edit_df) + 1) * 35 + 3
 
-                # num_rows="dynamic" 옵션을 통해 삭제 기능 활성화
+                # 표에서는 삭제 기능을 끄고 순수하게 내용 '수정'만 하도록 세팅 (체크박스 안나옴)
                 edited_data = st.data_editor(
                     edit_df,
                     use_container_width=True,
                     height=dynamic_height,
-                    num_rows="dynamic", # 추가 및 삭제 기능 켜기
+                    num_rows="fixed", 
                     hide_index=True,
                     column_config={
                         "금액": st.column_config.NumberColumn(format="%d원"),
@@ -282,30 +293,37 @@ def main():
                 )
 
                 with button_placeholder:
-                    if st.button("💾 저장 (수정/삭제 완료)", type="primary", use_container_width=True, key="save_home"):
-                        with st.spinner("구글 시트 연동 중..."):
-                            # 1. 삭제된 행 처리
-                            # 원본에는 있는데 편집된 데이터에는 없는 인덱스를 찾음
-                            deleted_indices = set(edit_df.index) - set(edited_data.index)
-                            if deleted_indices:
-                                delete_multiple_rows(list(deleted_indices))
-                            
-                            # 2. 수정된 데이터 처리
-                            # 편집된 데이터가 원본과 다른 경우 업데이트 수행
-                            for index, row in edited_data.iterrows():
-                                if index in edit_df.index: # 기존에 있던 행이면 수정 여부 검사
+                    if st.button("💾 수정사항 저장하기 (홈)", type="primary", use_container_width=True, key="save_home"):
+                        if not edit_df.equals(edited_data):
+                            with st.spinner("저장 중..."):
+                                for index, row in edited_data.iterrows():
                                     original_row = edit_df.loc[index]
                                     for col in HEADERS:
                                         if str(row[col]) != str(original_row[col]):
                                             update_cell(index, col, row[col])
-                                else:
-                                    # 새로 추가된 행(UI 상에서 직접 + 눌러 추가한 경우)
-                                    # (권장하지는 않으나, 예외 처리)
-                                    add_row(row['날짜'], row['구분'], row['사용자'], row['카테고리'], row['내역'], row['금액'])
+                                st.success("수정 완료!")
+                                time.sleep(1)
+                                st.rerun()
+                        else:
+                            st.info("변경 사항 없음")
+                
+                st.divider()
+                # [NEW] 직관적인 모바일 삭제 UI (드롭다운 + 삭제 버튼)
+                st.markdown("##### 🗑️ 개별 내역 삭제하기")
+                
+                # 표에 있는 내역을 보기 쉽게 텍스트로 만들어서 딕셔너리에 저장
+                delete_options = {}
+                for idx, row in this_month_df.sort_values(by='날짜', ascending=False).iterrows():
+                    label = f"{row['날짜'].strftime('%m-%d')} | {row['구분']} | {row['카테고리']} | {row['내역']} | {row['금액']:,}원"
+                    delete_options[label] = idx
 
-                            st.success("반영되었습니다!")
-                            time.sleep(1)
-                            st.rerun()
+                del_col1, del_col2 = st.columns([3, 1])
+                with del_col1:
+                    del_selected = st.selectbox("삭제할 항목을 선택하세요", list(delete_options.keys()), label_visibility="collapsed")
+                with del_col2:
+                    if st.button("삭제", use_container_width=True, key="btn_del_home"):
+                        # 팝업 호출
+                        confirm_delete_dialog(delete_options[del_selected], del_selected)
 
             else:
                 st.info("해당 월의 데이터가 없습니다.")
@@ -510,12 +528,12 @@ def main():
 
                     anal_height = (len(display_filtered) + 1) * 35 + 3
 
-                    # 분석 탭에서도 삭제 기능 활성화
+                    # 분석 탭에서도 체크박스 삭제 기능을 끄고 고정 행으로 설정
                     edited_anal = st.data_editor(
                         display_filtered,
                         use_container_width=True,
                         height=anal_height,
-                        num_rows="dynamic",
+                        num_rows="fixed",
                         hide_index=True,
                         column_config={
                             "금액": st.column_config.NumberColumn(format="%d원"),
@@ -526,29 +544,40 @@ def main():
                     )
 
                     with anal_button_placeholder:
-                        if st.button("💾 저장 (수정/삭제 완료)", type="primary", use_container_width=True, key="save_anal"):
-                            with st.spinner("구글 시트 연동 중..."):
-                                deleted_indices = set(display_filtered.index) - set(edited_anal.index)
-                                if deleted_indices:
-                                    delete_multiple_rows(list(deleted_indices))
-                                
-                                for index, row in edited_anal.iterrows():
-                                    if index in display_filtered.index:
+                        if st.button("💾 수정사항 저장하기 (분석)", type="primary", use_container_width=True, key="save_anal"):
+                            if not display_filtered.equals(edited_anal):
+                                with st.spinner("저장 중..."):
+                                    for index, row in edited_anal.iterrows():
                                         original_row = display_filtered.loc[index]
                                         for col in HEADERS:
                                             if str(row[col]) != str(original_row[col]):
                                                 update_cell(index, col, row[col])
-                                    else:
-                                        add_row(row['날짜'], row['구분'], row['사용자'], row['카테고리'], row['내역'], row['금액'])
+                                    st.success("수정 완료!")
+                                    time.sleep(1)
+                                    st.rerun()
+                            else:
+                                st.info("변경 사항 없음")
                                 
-                                st.success("반영되었습니다!")
-                                time.sleep(1)
-                                st.rerun()
+                    st.divider()
+                    # [NEW] 분석 탭에서도 개별 내역 삭제 지원
+                    st.markdown("##### 🗑️ 개별 내역 삭제하기")
+                    
+                    anal_del_options = {}
+                    for idx, row in filtered_df.sort_values(by='날짜', ascending=False).iterrows():
+                        label = f"{row['날짜'].strftime('%m-%d')} | {row['구분']} | {row['카테고리']} | {row['내역']} | {row['금액']:,}원"
+                        anal_del_options[label] = idx
+
+                    a_del_col1, a_del_col2 = st.columns([3, 1])
+                    with a_del_col1:
+                        a_del_selected = st.selectbox("삭제할 항목을 선택하세요", list(anal_del_options.keys()), label_visibility="collapsed", key="anal_del_box")
+                    with a_del_col2:
+                        if st.button("삭제", use_container_width=True, key="btn_del_anal"):
+                            confirm_delete_dialog(anal_del_options[a_del_selected], a_del_selected)
 
                 else:
                     st.info("내역이 없습니다.")
             else:
                 st.info("기간을 선택해주세요.")
-                
+
 if __name__ == '__main__':
     main()
