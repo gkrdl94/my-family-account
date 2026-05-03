@@ -101,6 +101,24 @@ def update_cell(row_idx, col_name, new_value):
         except: pass
     sheet.update_cell(sheet_row, sheet_col, new_value)
 
+# --- [NEW] 팝업(Dialog) 기능 정의 ---
+@st.dialog("상세 내역 확인")
+def popup_details(df_to_show, title):
+    st.markdown(f"#### {title}")
+    if not df_to_show.empty:
+        # 보여주기용 데이터 정리
+        show_df = df_to_show[['구분', '금액', '카테고리', '내역', '사용자']].copy()
+        st.dataframe(show_df.style.format({"금액": "{:,.0f}원"}), use_container_width=True, hide_index=True)
+        
+        # 요약 정보 추가
+        exp_sum = df_to_show[df_to_show['구분']=='지출']['금액'].sum()
+        inc_sum = df_to_show[df_to_show['구분']=='수입']['금액'].sum()
+        c1, c2 = st.columns(2)
+        c1.metric("지출 합계", f"{exp_sum:,.0f}원")
+        c2.metric("수입 합계", f"{inc_sum:,.0f}원")
+    else:
+        st.info("해당 내역이 없습니다.")
+
 # --- 로그인 및 화면 꾸미기 ---
 def check_password():
     def password_entered():
@@ -122,7 +140,7 @@ def check_password():
     )
     
     if "password_correct" in st.session_state and st.session_state["password_correct"] == False:
-        st.error("비밀번호를 입력해주세요!")
+        st.error("비밀번호를 다시 확인해주세요!")
 
     st.markdown("---")
     st.markdown("### 💖 아껴쓰자! 예진이는 맘대로 써도 돼") 
@@ -146,33 +164,11 @@ def main():
 
     today = datetime.now()
 
-    st.markdown("""
-    <style>
-    .calendar-container {
-        display: grid;
-        grid-template-columns: repeat(7, 1fr);
-        gap: 2px;
-        margin-bottom: 20px;
-    }
-    .day-header {
-        text-align: center;
-        font-weight: bold;
-        font-size: 0.8em;
-        padding: 5px 0;
-    }
-    .day-cell {
-        border: 1px solid #e0e0e0;
-        border-radius: 5px;
-        padding: 4px;
-        min-height: 50px;
-        font-size: 0.7em;
-        position: relative;
-    }
-    @media (max-width: 600px) {
-        .day-cell { min-height: 45px; font-size: 0.65em; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # 홈 화면 월 이동을 위한 상태 저장
+    if "home_year" not in st.session_state:
+        st.session_state.home_year = today.year
+    if "home_month" not in st.session_state:
+        st.session_state.home_month = today.month
 
     with st.sidebar:
         st.title("🏡 우리집 가계부")
@@ -195,10 +191,29 @@ def main():
     # [탭 1] 입력 및 홈
     # ==========================
     if menu == "📝 입력 및 홈":
-        st.header(f"{today.month}월 가계부 현황")
         
+        # [수정됨] 월 이동 화살표 네비게이션
+        nav1, nav2, nav3 = st.columns([1, 2, 1])
+        with nav1:
+            if st.button("◀ 이전 달", use_container_width=True):
+                st.session_state.home_month -= 1
+                if st.session_state.home_month < 1:
+                    st.session_state.home_month = 12
+                    st.session_state.home_year -= 1
+                st.rerun()
+        with nav2:
+            st.markdown(f"<h3 style='text-align: center;'>{st.session_state.home_year}년 {st.session_state.home_month}월 내역</h3>", unsafe_allow_html=True)
+        with nav3:
+            if st.button("다음 달 ▶", use_container_width=True):
+                st.session_state.home_month += 1
+                if st.session_state.home_month > 12:
+                    st.session_state.home_month = 1
+                    st.session_state.home_year += 1
+                st.rerun()
+
+        # 선택한 월 기준으로 데이터 필터링
         if not df.empty:
-            this_month_df = df[(df['날짜'].dt.month == today.month) & (df['날짜'].dt.year == today.year)]
+            this_month_df = df[(df['날짜'].dt.month == st.session_state.home_month) & (df['날짜'].dt.year == st.session_state.home_year)]
             total_expense = this_month_df[this_month_df['구분']=='지출']['금액'].sum()
         else:
             this_month_df = pd.DataFrame(columns=HEADERS)
@@ -233,7 +248,7 @@ def main():
                     st.rerun()
 
         with col2:
-            st.subheader(f"📋 이번 달 내역 ({len(this_month_df)}건)")
+            st.subheader(f"📋 {st.session_state.home_month}월 전체 내역 ({len(this_month_df)}건)")
             
             button_placeholder = st.empty()
             
@@ -274,7 +289,7 @@ def main():
                         else:
                             st.info("변경 사항 없음")
             else:
-                st.info("이번 달 데이터가 없습니다.")
+                st.info("해당 월의 데이터가 없습니다.")
 
     # ==========================
     # [탭 2] 고정 지출 관리
@@ -337,10 +352,10 @@ def main():
             st.info("등록된 고정 지출이 없습니다.")
 
     # ==========================
-    # [탭 3] 달력
+    # [탭 3] 달력 (버튼 클릭형 팝업 적용)
     # ==========================
     elif menu == "📅 달력":
-        st.header("📅 월별 달력")
+        st.header("📅 월별 달력 (날짜를 클릭하세요!)")
         c1, c2 = st.columns(2)
         sel_year = c1.number_input("연도", value=today.year)
         sel_month = c2.number_input("월", value=today.month, min_value=1, max_value=12)
@@ -349,67 +364,45 @@ def main():
         cal = calendar.monthcalendar(sel_year, sel_month)
         week_korean = ['일', '월', '화', '수', '목', '금', '토']
         
-        header_html = '<div class="calendar-container">'
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # 달력 헤더 (요일)
+        cols = st.columns(7)
         for i, w in enumerate(week_korean):
             color = "red" if i == 0 else "blue" if i == 6 else "black"
-            header_html += f'<div class="day-header" style="color:{color}">{w}</div>'
-        header_html += '</div>'
-        st.markdown(header_html, unsafe_allow_html=True)
+            cols[i].markdown(f"<div style='text-align:center; color:{color}; font-weight:bold;'>{w}</div>", unsafe_allow_html=True)
 
         if not df.empty:
             month_data = df[(df['날짜'].dt.year == sel_year) & (df['날짜'].dt.month == sel_month)]
         else:
             month_data = pd.DataFrame(columns=HEADERS)
 
-        grid_html = '<div class="calendar-container">'
+        # [수정됨] 달력을 버튼 그리드로 생성 (날짜 클릭 시 팝업 띄움)
         for week in cal:
+            cols = st.columns(7)
             for i, day in enumerate(week):
-                if day == 0:
-                    grid_html += '<div class="day-cell" style="border:none;"></div>'
-                    continue
-                
-                bg_color = "transparent"
-                if i == 0: bg_color = "#FFF0F0"
-                elif i == 6: bg_color = "#F0F8FF"
-                
-                cell_content = f'<div style="font-weight:bold;">{day}</div>'
-                
-                if not month_data.empty:
-                    day_records = month_data[month_data['날짜'].dt.day == day]
-                    if not day_records.empty:
-                        d_exp = day_records[day_records['구분']=='지출']['금액'].sum()
-                        d_inc = day_records[day_records['구분']=='수입']['금액'].sum()
+                with cols[i]:
+                    if day != 0:
+                        day_df = month_data[month_data['날짜'].dt.day == day] if not month_data.empty else pd.DataFrame(columns=HEADERS)
+                        exp = day_df[day_df['구분']=='지출']['금액'].sum()
+                        inc = day_df[day_df['구분']=='수입']['금액'].sum()
                         
-                        if d_exp > 0:
-                            cell_content += f'<div style="color:red; font-size:0.85em;" class="amount-text">-{d_exp:,.0f}</div>'
-                        if d_inc > 0:
-                            cell_content += f'<div style="color:blue; font-size:0.85em;" class="amount-text">+{d_inc:,.0f}</div>'
-                
-                grid_html += f'<div class="day-cell" style="background-color:{bg_color};">{cell_content}</div>'
-        grid_html += '</div>'
-        st.markdown(grid_html, unsafe_allow_html=True)
+                        # 버튼 텍스트 구성
+                        btn_label = f"{day}일"
+                        if exp > 0: btn_label += f"\n-{exp:,.0f}"
+                        if inc > 0: btn_label += f"\n+{inc:,.0f}"
+                        
+                        # 날짜 버튼을 누르면 팝업(Dialog) 호출
+                        if st.button(btn_label, key=f"cal_{sel_year}_{sel_month}_{day}", use_container_width=True):
+                            popup_details(day_df, f"📅 {sel_year}년 {sel_month}월 {day}일 상세 내역")
+                    else:
+                        st.write("") # 빈 공간 처리
 
         st.divider()
-        st.header("🔍 일별 상세 내역")
-        selected_date = st.date_input("확인할 날짜 선택", today)
-        
-        if not df.empty:
-            day_df = df[df['날짜'].dt.date == selected_date]
-            if not day_df.empty:
-                d_income = day_df[day_df['구분']=='수입']['금액'].sum()
-                d_expense = day_df[day_df['구분']=='지출']['금액'].sum()
-                
-                m1, m2 = st.columns(2)
-                m1.metric("수입", f"{d_income:,.0f}원")
-                m2.metric("지출", f"{d_expense:,.0f}원")
-                
-                display_table = day_df[['구분', '금액', '카테고리', '내역', '사용자']].copy()
-                st.dataframe(display_table.style.format({"금액": "{:,.0f}원"}), use_container_width=True, hide_index=True)
-            else:
-                st.info("해당 날짜의 내역이 없습니다.")
+        st.info("💡 달력의 날짜 칸(버튼)을 직접 터치하시면 팝업으로 상세 내역을 확인할 수 있습니다.")
 
     # ==========================
-    # [탭 4] 맞춤형 분석
+    # [탭 4] 맞춤형 분석 (차트 팝업 적용)
     # ==========================
     elif menu == "📊 분석":
         st.header("📊 맞춤형 상세 분석")
@@ -444,16 +437,12 @@ def main():
                     
                     st.divider()
                     m1, m2 = st.columns(2)
-                    m1.metric("기간 수입", f"{total_inc:,.0f}원")
-                    m2.metric("기간 지출", f"{total_exp:,.0f}원")
+                    m1.metric("선택 기간 수입 합계", f"{total_inc:,.0f}원")
+                    m2.metric("선택 기간 지출 합계", f"{total_exp:,.0f}원")
 
                     st.divider()
 
-                    # ==========================================
-                    # [수정] 시각화 차트 (숫자 포맷팅 적용)
-                    # ==========================================
                     st.subheader("📈 지출 분석 차트")
-                    
                     exp_df = filtered_df[filtered_df['구분'] == '지출']
                     
                     if not exp_df.empty:
@@ -466,7 +455,6 @@ def main():
                         if chart_type == "카테고리별 비중 (원형)":
                             cat_sum = exp_df.groupby('카테고리')['금액'].sum().reset_index()
                             fig = px.pie(cat_sum, values='금액', names='카테고리', hole=0.4)
-                            # 파이 차트에 콤마 및 원 단위 포맷 적용
                             fig.update_traces(
                                 textposition='inside', 
                                 textinfo='percent+label',
@@ -474,23 +462,30 @@ def main():
                             )
                             st.plotly_chart(fig, use_container_width=True)
                             
+                            # [NEW] 특정 카테고리 팝업 보기
+                            st.markdown("#### 🔍 특정 카테고리 세부내역 보기")
+                            p_col1, p_col2 = st.columns([3, 1])
+                            with p_col1:
+                                pop_cat = st.selectbox("항목을 선택하세요", exp_df['카테고리'].unique(), label_visibility="collapsed")
+                            with p_col2:
+                                if st.button("팝업 열기", type="primary", use_container_width=True):
+                                    cat_df = exp_df[exp_df['카테고리'] == pop_cat]
+                                    popup_details(cat_df, f"📊 [{pop_cat}] 상세 내역")
+                            
                         elif chart_type == "일별 지출 흐름 (막대)":
                             daily_sum = exp_df.groupby('날짜')['금액'].sum().reset_index()
                             fig = px.bar(daily_sum, x='날짜', y='금액')
-                            # 막대 차트에 콤마 및 원 단위 포맷 적용
                             fig.update_traces(
                                 texttemplate='%{y:,.0f}원', 
                                 textposition='outside',
                                 hovertemplate='%{x}<br>%{y:,.0f}원'
                             )
-                            # Y축 단위도 콤마 적용
                             fig.update_yaxes(tickformat=",.0f", title="금액 (원)")
                             st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.info("선택하신 기간에 지출 내역이 없어 그래프를 그릴 수 없습니다.")
                     
                     st.divider()
-                    # ==========================================
 
                     st.subheader("📝 상세 내역 수정")
                     anal_button_placeholder = st.empty()
